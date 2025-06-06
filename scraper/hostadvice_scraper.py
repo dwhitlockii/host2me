@@ -22,6 +22,7 @@ FIELDS = ["name", "url", "rating", "price", "location"]
 
 # Proxy support
 PROXY = os.environ.get('SCRAPER_PROXY')
+DEBUG_MODE = os.environ.get('DEBUG_HOSTADVICE') == '1'
 
 def parse_company_card(card):
     name = card.select_one(".company-name")
@@ -44,34 +45,34 @@ def parse_company_card(card):
         "location": location
     }
 
-def fetch_with_selenium(url):
-    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
-    if HAVE_UC:
-        options = uc.ChromeOptions()
-        # options.add_argument('--headless')
-        options.add_argument('--disable-gpu')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--window-size=1920,1080')
-        options.add_argument('--disable-blink-features=AutomationControlled')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument(f'--user-agent={user_agent}')
-        options.add_argument('--lang=en-US,en')
-        if PROXY:
-            options.add_argument(f'--proxy-server={PROXY}')
-        driver = uc.Chrome(options=options)
-    else:
-        chrome_options = Options()
-        chrome_options.add_argument('--headless')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument(f'--user-agent={user_agent}')
-        chrome_options.add_argument('--lang=en-US,en')
-        if PROXY:
-            chrome_options.add_argument(f'--proxy-server={PROXY}')
-        driver = webdriver.Chrome(options=chrome_options)
+def fetch_with_selenium(url, retry=True):
+    user_agent = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/114.0 Safari/537.36"
+    )
+    options = uc.ChromeOptions() if HAVE_UC else Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument(f"--user-agent={user_agent}")
+    options.add_argument("--lang=en-US,en")
+    if PROXY:
+        options.add_argument(f"--proxy-server={PROXY}")
+    try:
+        driver = uc.Chrome(options=options) if HAVE_UC else webdriver.Chrome(options=options)
+    except Exception as e:
+        print(f"[ERROR] Failed to start Chrome: {e}")
+        if retry:
+            try:
+                driver = uc.Chrome(options=options) if HAVE_UC else webdriver.Chrome(options=options)
+            except Exception as e2:
+                print(f"[ERROR] Retry failed: {e2}")
+                return f"<html><body><h1>Selenium failed: {e2}</h1></body></html>"
+        else:
+            return f"<html><body><h1>Selenium failed: {e}</h1></body></html>"
     try:
         driver.get(url)
         # Wait for company card to appear (try multiple selectors)
@@ -97,18 +98,20 @@ def fetch_with_selenium(url):
                 break
             except Exception:
                 continue
-        # Take a screenshot before accessing page_source
-        driver.save_screenshot("output/hostadvice_debug.png")
+        if DEBUG_MODE:
+            driver.save_screenshot("output/hostadvice_debug.png")
         html = driver.page_source
-        with open("output/hostadvice_debug.html", "w", encoding="utf-8") as f:
-            f.write(html)
+        if DEBUG_MODE:
+            with open("output/hostadvice_debug.html", "w", encoding="utf-8") as f:
+                f.write(html)
         return html
     except Exception as e:
         print(f"[ERROR] Selenium error: {e}")
-        try:
-            driver.save_screenshot("output/hostadvice_error.png")
-        except Exception:
-            pass
+        if DEBUG_MODE:
+            try:
+                driver.save_screenshot("output/hostadvice_error.png")
+            except Exception:
+                pass
         raise
     finally:
         try:
