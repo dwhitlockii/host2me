@@ -1,0 +1,43 @@
+## [Unreleased]
+- Added detailed project purpose, feature summary, and intended use cases to project_state.md
+- Updated code_index.md to reflect all files, functions, and relationships 
+- Added SerpAPI-powered search to scraper for robust, reliable results (with fallback to legacy Bing scraping)
+- Updated requirements.txt to include serpapi
+- Updated Dockerfile to document SERPAPI_KEY env
+- Updated project_state.md to reflect SerpAPI migration 
+- Expanded search terms for broader coverage
+- Added support for Bing, Google, and DuckDuckGo via SerpAPI
+- Loosened US-only and disqualifier filters
+- Added logic to extract companies from directory/list pages 
+- Added SEED_URLS to always scrape known directories (e.g., webhostingbuddy.com) 
+- All HTTP requests now use a 5s timeout to skip slow-loading sites (scraper/hosting_scraper.py, hosting_scraper_verbose.py) 
+- Added detailed print logging to the console for all major scraper actions (site checks, skips, errors, additions, directory extraction, search term results) 
+- Strengthened is_hosting_company: now requires at least 2 keyword matches and at least one in a heading or title, reducing false positives from non-hosting sites 
+- Added DOMAIN_BLACKLIST to skip known non-hosting/social/review/aggregator domains
+- is_hosting_company now requires at least one strong nav/product link for acceptance
+- Deduplication by canonical domain (netloc, lowercased, no www.)
+- Scoring breakdown for each site is saved in output and visible in Excel/JSON
+- All log lines now yield for frontend progress bar accuracy 
+- Loosened filters and scoring logic in scraper/hosting_scraper.py: US-based check more permissive, only egregious disqualifiers skip, lower score threshold, careers page optional, detailed skip logging 
+- Radically reduced negative keywords in is_hosting_company to only true disqualifiers, removed all penalties for generic business/tech/support words, made directory extraction more permissive, and only skip for egregious disqualifiers in has_disqualifiers
+- Made acceptance stricter—directory extraction now only accepts companies with score >= 10 and strong nav link, is_hosting_company requires at least two positive signals and one in heading/title, expanded egregious disqualifiers, logs all acceptances with positive signals
+- Made is_hosting_company stricter—now requires a CTA (buy/order/signup/get started), a pricing/plans/packages section, and expanded aggregator/research/statistics disqualifiers. Directory extraction applies same checks. All acceptances log positive signals
+- Loosened acceptance—now accepts if at least 2 positive signals (one in heading/title/nav) AND (CTA OR pricing/plans/packages found); expanded CTA triggers; pricing/plans/packages counted in nav text/href; directory extraction uses same logic
+- Updated scoring_pass.py: Lowered acceptance threshold to 30, boosted weights for tech/contextual/behavioral signals, added rescue logic for borderline sites, aggregate signals from links/snippets, and improved review/acceptance logic for more adaptive host detection.
+- Loosened foundational scrape in scraper/hosting_scraper.py: removed all filtering/disqualifier logic, now saves all plausible candidates to output/unfiltered_hosts.csv for scoring phase.
+- Backend now yields a [PROGRESS] log line for every candidate processed in stream_hosting_scraper, ensuring the frontend progress bar always updates, even if all are skipped or rejected.
+- Added 'directory mode': WHTop/directory-mined companies are now accepted with a much looser threshold (if 'hosting' is present or score >= 5), marked as DirectoryAccepted, greatly increasing acceptance from trusted directories.
+- FIX: /output/companies.json endpoint now falls back to output/final_results.xlsx if companies.json is missing, ensuring company data is always available to the frontend.
+- Softened scoring: reduced penalties for soft negatives (missing CTA, domain signal, etc.)
+- Directory boost: +10 score for trusted directory sources
+- 'Maybe' bucket: borderline/possible hosts (score -5 to +10) exported to output/borderline_hosts.xlsx for human review
+- Multi-page analysis: if homepage fails, /hosting, /plans, /services are crawled and best score is used
+- All skip/accept reasons logged in Scoring Breakdown and output files
+- Added 'Source' field to output indicating Directory, Search, or Multi-Page
+- WHTop scraper now supports full automatic pagination, scraping all available pages (50+) instead of just the first. Optional max_pages argument added for control.
+- WHTop pagination now stops after 2 consecutive pages with no new companies, or at a hard max_pages limit (default 200). Prevents infinite scraping when directory ends.
+- Added HostAdvice scraper (scraper/hostadvice_scraper.py) with robust pagination, company extraction, and CSV output. Enables large-scale, scrape-friendly directory mining as WHTop alternative.
+- UI now has a 'Use HostAdvice directory' checkbox. Backend and pipeline support HostAdvice mode, enabling one-click HostAdvice scraping from the web UI.
+- Fixed Flask 'Working outside of request context' error in /scrape-stream by moving session access outside the generator. Now reads session before generator starts, ensuring robust streaming and UI integration.
+- Dockerfile now installs Google Chrome and ChromeDriver for Selenium headless support, enabling HostAdvice scraping in Docker containers.
+- Added undetected-chromedriver for HostAdvice anti-bot evasion, updated fetch_with_selenium to use it and set more human-like options.

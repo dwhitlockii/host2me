@@ -1,0 +1,12 @@
+flask
+requests
+beautifulsoup4
+pandas
+openpyxl
+fake-useragent
+tqdm
+google-search-results
+colorama
+tldextract
+selenium
+undetected-chromedriver

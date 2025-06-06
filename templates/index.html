@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>US Hosting Scraper</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        #log { white-space: pre-wrap; background: #111; color: #0f0; padding: 15px; border-radius: 5px; height: 400px; overflow-y: auto; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <h1>🇺🇸 U.S. Web Hosting Company Scraper</h1>
+    <div id="status" style="margin: 10px 0; font-weight: bold;"></div>
+    <div id="progressBar" style="width: 100%; background: #222; border-radius: 5px; height: 20px; margin-bottom: 10px;">
+        <div id="progressFill" style="height: 100%; width: 0; background: #0f0; border-radius: 5px;"></div>
+    </div>
+    <div id="stats" style="margin-bottom: 10px; font-size: 14px; color: #ccc;"></div>
+    <label for="searchTerms" style="font-weight:bold;">Search Terms (one per line):</label><br>
+    <textarea id="searchTerms" rows="4" style="width: 100%; max-width: 500px; margin-bottom: 10px;">independent web hosting companies USA
+top US-based hosting providers
+list of US cloud hosting companies
+best small business hosting companies US
+non-reseller hosting providers USA
+private web hosting company United States
+web hosting company directory USA
+list of web hosting companies
+top web hosting companies worldwide
+web hosting company list
+cloud hosting providers directory
+web hosting company reviews
+web hosting company comparison</textarea><br>
+    <label><input type="checkbox" id="hostadviceCheckbox"> Use HostAdvice directory</label><br>
+    <button onclick="startScrape()">Start Scrape</button>
+    <button id="pauseBtn" onclick="pauseScrape()" disabled>Pause</button>
+    <button id="resumeBtn" onclick="resumeScrape()" disabled>Resume</button>
+    <button id="cancelBtn" onclick="cancelScrape()" disabled>Cancel</button>
+    <button id="downloadBtn" onclick="window.location='/download'" disabled>Download Excel</button>
+    <button id="downloadCsvBtn" onclick="window.location='/download?format=csv'" disabled>Download CSV</button>
+    <button id="downloadJsonBtn" onclick="window.location='/download?format=json'" disabled>Download JSON</button>
+    <button id="themeBtn" onclick="toggleTheme()">Toggle Theme</button>
+    <input id="logSearch" type="text" placeholder="Filter log..." style="margin: 10px 0; width: 200px;" oninput="filterLog()">
+    <div id="log"></div>
+    <div id="summary" style="margin-top: 20px; font-size: 15px; color: #fff; display: none; background: #222; padding: 10px; border-radius: 5px;"></div>
+    <button id="downloadLogBtn" onclick="window.location='/download?format=log'" style="display:none; margin-top:10px;">Download Debug Log</button>
+    <div id="companyModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#222; color:#fff; padding:20px; border-radius:8px; z-index:1000; min-width:300px; max-width:90vw; max-height:80vh; overflow:auto; box-shadow:0 0 20px #000;">
+        <span style="float:right; cursor:pointer; font-size:20px;" onclick="closeModal()">&times;</span>
+        <div id="modalContent"></div>
+    </div>
+    <script>
+        let totalUrls = 0;
+        let processedUrls = 0;
+        let errorCount = 0;
+        let skippedCount = 0;
+        let addedCount = 0;
+        let startTime = null;
+        let source = null;
+        let paused = false;
+        let logLines = [];
+        let currentTheme = 'dark';
+        let lastSummaryCompanies = [];
+        let summaryShown = false;
+        function startScrape() {
+            const logDiv = document.getElementById("log");
+            const downloadBtn = document.getElementById("downloadBtn");
+            const statusDiv = document.getElementById("status");
+            const progressFill = document.getElementById("progressFill");
+            const statsDiv = document.getElementById("stats");
+            const summaryDiv = document.getElementById("summary");
+            document.getElementById("pauseBtn").disabled = false;
+            document.getElementById("resumeBtn").disabled = true;
+            document.getElementById("cancelBtn").disabled = false;
+            logDiv.innerHTML = '';
+            downloadBtn.disabled = true;
+            statusDiv.textContent = '';
+            progressFill.style.width = '0';
+            statsDiv.textContent = '';
+            summaryDiv.style.display = 'none';
+            summaryDiv.innerHTML = '';
+            totalUrls = 0;
+            processedUrls = 0;
+            errorCount = 0;
+            skippedCount = 0;
+            addedCount = 0;
+            startTime = null;
+            paused = false;
+            logLines = [];
+            summaryShown = false;
+            if (source) { source.close(); }
+            // Get custom search terms
+            const searchTerms = document.getElementById("searchTerms").value.split('\n').map(s => s.trim()).filter(Boolean);
+            // Check HostAdvice checkbox
+            const useHostAdvice = document.getElementById("hostadviceCheckbox").checked;
+            // Use fetch to POST search terms and source, then open SSE
+            fetch('/start-scrape', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ search_terms: searchTerms, source: useHostAdvice ? 'hostadvice' : 'directory' })
+            }).then(() => {
+                source = new EventSource("/scrape-stream");
+                source.onmessage = function(event) {
+                    if (paused) return;
+                    logLines.push(event.data);
+                    filterLog();
+                    // Handle [PROGRESS] log lines
+                    if (event.data.startsWith("[PROGRESS]")) {
+                        const match = event.data.match(/Processed (\d+)[\/](\d+)/);
+                        if (match) {
+                            processedUrls = parseInt(match[1]);
+                            totalUrls = parseInt(match[2]);
+                            if (!startTime) startTime = Date.now();
+                            updateProgress();
+                        }
+                    }
+                    // Detect total URLs
+                    if (event.data.startsWith("[LOG] ") && event.data.includes("URLs found")) {
+                        const match = event.data.match(/(\d+) URLs found/);
+                        if (match) {
+                            totalUrls = parseInt(match[1]);
+                            processedUrls = 0;
+                            errorCount = 0;
+                            skippedCount = 0;
+                            addedCount = 0;
+                            startTime = null;
+                            updateProgress();
+                        }
+                    }
+                    // Detect each site check (show current action, but do not increment processedUrls)
+                    if (event.data.startsWith("[SITE] Checking:")) {
+                        if (!startTime) startTime = Date.now();
+                        updateProgress(event.data.replace('[SITE] ',''));
+                    }
+                    // Only increment result counts (not processedUrls)
+                    if (
+                        event.data.startsWith("[✔] Added") ||
+                        event.data.startsWith("[✘] Skipped") ||
+                        event.data.startsWith("[ERR] Failed")
+                    ) {
+                        if (event.data.startsWith("[✔] Added")) addedCount++;
+                        if (event.data.startsWith("[✘] Skipped")) skippedCount++;
+                        if (event.data.startsWith("[ERR] Failed")) errorCount++;
+                        updateProgress();
+                    }
+                    // Detect completion
+                    if (event.data.includes("[✅] Scrape complete") && !summaryShown) {
+                        enableDownloads();
+                        statusDiv.textContent = 'Scrape complete!';
+                        progressFill.style.width = '100%';
+                        updateProgress();
+                        showSummary();
+                        summaryShown = true;
+                        document.getElementById("pauseBtn").disabled = true;
+                        document.getElementById("resumeBtn").disabled = true;
+                        document.getElementById("cancelBtn").disabled = true;
+                        fetch('/output/companies.json').then(r => r.json()).then(data => { window.lastSummaryCompanies = data; });
+                    }
+                };
+                source.onerror = function() {
+                    source.close();
+                };
+            });
+        }
+        function pauseScrape() {
+            paused = true;
+            document.getElementById("pauseBtn").disabled = true;
+            document.getElementById("resumeBtn").disabled = false;
+        }
+        function resumeScrape() {
+            paused = false;
+            document.getElementById("pauseBtn").disabled = false;
+            document.getElementById("resumeBtn").disabled = true;
+        }
+        function cancelScrape() {
+            if (source) { source.close(); }
+            document.getElementById("pauseBtn").disabled = true;
+            document.getElementById("resumeBtn").disabled = true;
+            document.getElementById("cancelBtn").disabled = true;
+            document.getElementById("status").textContent = 'Scrape cancelled.';
+        }
+        function updateProgress(currentAction) {
+            const statusDiv = document.getElementById("status");
+            const progressFill = document.getElementById("progressFill");
+            const statsDiv = document.getElementById("stats");
+            let percent = 0;
+            if (totalUrls > 0) {
+                percent = Math.round((processedUrls / totalUrls) * 100);
+                progressFill.style.width = percent + '%';
+                // Estimate time remaining
+                let eta = '';
+                if (startTime && processedUrls > 0) {
+                    const elapsed = (Date.now() - startTime) / 1000; // seconds
+                    const avgPerUrl = elapsed / processedUrls;
+                    const remaining = totalUrls - processedUrls;
+                    const etaSec = Math.round(avgPerUrl * remaining);
+                    if (etaSec > 0) {
+                        const min = Math.floor(etaSec / 60);
+                        const sec = etaSec % 60;
+                        eta = ` | ETA: ${min}m ${sec}s`;
+                    }
+                }
+                statusDiv.textContent = `Processing: ${processedUrls} of ${totalUrls} (${percent}%)` + (currentAction ? ` — ${currentAction}` : '') + eta;
+            } else {
+                progressFill.style.width = '0';
+                statusDiv.textContent = currentAction ? `Status: ${currentAction}` : '';
+            }
+            statsDiv.textContent = `Added: ${addedCount} | Errors: ${errorCount} | Skipped: ${skippedCount}`;
+        }
+        function showSummary() {
+            const summaryDiv = document.getElementById("summary");
+            const elapsed = startTime ? ((Date.now() - startTime) / 1000) : 0;
+            const avgTime = processedUrls > 0 ? (elapsed / processedUrls).toFixed(2) : '0.00';
+            summaryDiv.style.display = 'block';
+            // Render companies as clickable if available
+            let companiesHtml = '';
+            if (window.lastSummaryCompanies && window.lastSummaryCompanies.length) {
+                companiesHtml = '<br><b>Companies:</b><ul>' + window.lastSummaryCompanies.map((c, i) => `<li><a href="#" onclick="showCompanyDetails(${i});return false;">${c['Company Name']}</a></li>`).join('') + '</ul>';
+            }
+            summaryDiv.innerHTML = `
+                <b>Scrape Summary</b><br>
+                Total URLs Processed: ${processedUrls}<br>
+                Companies Added: ${addedCount}<br>
+                Skipped: ${skippedCount}<br>
+                Errors: ${errorCount}<br>
+                Average Time per Site: ${avgTime} sec<br>
+                Total Elapsed Time: ${Math.floor(elapsed/60)}m ${Math.round(elapsed%60)}s
+                ${companiesHtml}
+            `;
+            document.getElementById('downloadLogBtn').style.display = 'inline-block';
+        }
+        function filterLog() {
+            const logDiv = document.getElementById("log");
+            const search = document.getElementById("logSearch").value.toLowerCase();
+            logDiv.innerHTML = logLines.filter(line => line.toLowerCase().includes(search)).join("\n");
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        function toggleTheme() {
+            const body = document.body;
+            if (currentTheme === 'dark') {
+                body.style.background = '#fff';
+                body.style.color = '#111';
+                document.getElementById("log").style.background = '#eee';
+                document.getElementById("log").style.color = '#222';
+                document.getElementById("progressBar").style.background = '#ccc';
+                document.getElementById("progressFill").style.background = '#007bff';
+                document.getElementById("summary").style.background = '#eee';
+                document.getElementById("summary").style.color = '#222';
+                currentTheme = 'light';
+            } else {
+                body.style.background = '#111';
+                body.style.color = '#fff';
+                document.getElementById("log").style.background = '#111';
+                document.getElementById("log").style.color = '#0f0';
+                document.getElementById("progressBar").style.background = '#222';
+                document.getElementById("progressFill").style.background = '#0f0';
+                document.getElementById("summary").style.background = '#222';
+                document.getElementById("summary").style.color = '#fff';
+                currentTheme = 'dark';
+            }
+        }
+        function enableDownloads() {
+            document.getElementById("downloadBtn").disabled = false;
+            document.getElementById("downloadCsvBtn").disabled = false;
+            document.getElementById("downloadJsonBtn").disabled = false;
+        }
+        // Modal logic
+        function showCompanyDetails(idx) {
+            const c = window.lastSummaryCompanies[idx];
+            let html = '';
+            for (const k in c) {
+                if (c[k]) {
+                    if (k === 'LinkedIn' || k === 'Twitter' || k === 'Website URL' || k === 'Careers Page URL') {
+                        html += `<b>${k}:</b> <a href="${c[k]}" target="_blank">${c[k]}</a><br>`;
+                    } else {
+                        html += `<b>${k}:</b> ${c[k]}<br>`;
+                    }
+                }
+            }
+            document.getElementById('modalContent').innerHTML = html;
+            document.getElementById('companyModal').style.display = 'block';
+        }
+        function closeModal() {
+            document.getElementById('companyModal').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
