@@ -93,6 +93,7 @@ This is a Python + Flask-powered web application that scrapes the internet for U
 - [Completed] UI HostAdvice checkbox and backend integration. User can now select HostAdvice as the source and run the scrape from the web interface.
 - [Completed] Fixed Flask session context bug in /scrape-stream. Session is now accessed before generator, resolving 'Working outside of request context' error and restoring UI streaming.
 - Dockerfile: Add Chrome/ChromeDriver for Selenium (enables HostAdvice scraping in Docker)
+- Modularized scrapers into scrapers/whtop.py and scrapers/hostadvice.py with debug HTML output and optional proxy support. Added run_directory_scrape.py.
 
 ## Follow-up Needed
 - Further tuning of filters and extraction logic for edge cases 
