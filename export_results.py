@@ -4,6 +4,8 @@ import re
 
 SCORED_PATH = 'output/scored_hosts.csv'
 FINAL_XLSX = 'output/final_results.xlsx'
+HOST2ME_XLSX = 'output/host2me_results.xlsx'
+HOST2ME_JSON = 'output/host2me_results.json'
 REVIEW_CSV = 'output/review_queue.csv'
 REJECTED_CSV = 'output/rejected_log.csv'
 
@@ -36,10 +38,13 @@ def main():
 
     os.makedirs('output', exist_ok=True)
     accepted.to_excel(FINAL_XLSX, index=False)
+    accepted.to_excel(HOST2ME_XLSX, index=False)
+    accepted.to_json(HOST2ME_JSON, orient='records', force_ascii=False)
     review.to_csv(REVIEW_CSV, index=False)
     rejected.to_csv(REJECTED_CSV, index=False)
 
     print(f"[EXPORT] {len(accepted)} accepted → {FINAL_XLSX}")
+    print(f"[EXPORT] {len(accepted)} accepted → {HOST2ME_XLSX} & {HOST2ME_JSON}")
     print(f"[EXPORT] {len(review)} for review → {REVIEW_CSV}")
     print(f"[EXPORT] {len(rejected)} rejected → {REJECTED_CSV}")
     print("[EXPORT] Done.")

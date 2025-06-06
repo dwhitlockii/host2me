@@ -12,6 +12,7 @@ def run_step(cmd, desc):
 
 if __name__ == "__main__":
     run_step(["run_foundational_scrape.py"], "Foundational Scrape (raw candidates)")
+    run_step(["run_directory_scrape.py"], "Directory Scrape (HostAdvice/WHTop)")
     run_step(["scoring_pass.py"], "Scoring Pass (modular scoring)")
     run_step(["export_results.py"], "Export Results (final Excel/CSV)")
     print("\n[PIPELINE] All steps completed. Check the output/ directory for results.") 
