@@ -23,6 +23,8 @@ FIELDS = ["name", "url", "rating", "price", "location"]
 # Proxy support
 PROXY = os.environ.get('SCRAPER_PROXY')
 DEBUG_MODE = os.environ.get('DEBUG_HOSTADVICE') == '1'
+# Toggle to see the browser when running locally
+SHOW_BROWSER = os.environ.get('SHOW_BROWSER') == '1'
 
 def parse_company_card(card):
     name = card.select_one(".company-name")
@@ -45,13 +47,14 @@ def parse_company_card(card):
         "location": location
     }
 
-def fetch_with_selenium(url, retry=True):
+def fetch_with_selenium(url, proxy=None, retry=True):
     user_agent = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/114.0 Safari/537.36"
     )
     options = uc.ChromeOptions() if HAVE_UC else Options()
-    options.add_argument("--headless=new")
+    if not SHOW_BROWSER:
+        options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
@@ -59,22 +62,19 @@ def fetch_with_selenium(url, retry=True):
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument(f"--user-agent={user_agent}")
     options.add_argument("--lang=en-US,en")
-    if PROXY:
-        options.add_argument(f"--proxy-server={PROXY}")
+    if proxy:
+        options.add_argument(f"--proxy-server={proxy}")
     try:
         driver = uc.Chrome(options=options) if HAVE_UC else webdriver.Chrome(options=options)
     except Exception as e:
         print(f"[ERROR] Failed to start Chrome: {e}")
-        if retry:
-            try:
-                driver = uc.Chrome(options=options) if HAVE_UC else webdriver.Chrome(options=options)
-            except Exception as e2:
-                print(f"[ERROR] Retry failed: {e2}")
-                return f"<html><body><h1>Selenium failed: {e2}</h1></body></html>"
-        else:
-            return f"<html><body><h1>Selenium failed: {e}</h1></body></html>"
+        if retry and PROXY and not proxy:
+            print("[INFO] Retrying Chrome launch with proxy")
+            return fetch_with_selenium(url, proxy=PROXY, retry=False)
+        return f"<html><body><h1>Selenium failed: {e}</h1></body></html>"
     try:
         driver.get(url)
+        time.sleep(2)
         # Wait for company card to appear (try multiple selectors)
         found = False
         for class_name in ["company-card", "company-list-card", "listing__card"]:
@@ -101,9 +101,9 @@ def fetch_with_selenium(url, retry=True):
         if DEBUG_MODE:
             driver.save_screenshot("output/hostadvice_debug.png")
         html = driver.page_source
-        if DEBUG_MODE:
-            with open("output/hostadvice_debug.html", "w", encoding="utf-8") as f:
-                f.write(html)
+        debug_path = "output/hostadvice_debug.html"
+        with open(debug_path, "w", encoding="utf-8") as f:
+            f.write(html)
         return html
     except Exception as e:
         print(f"[ERROR] Selenium error: {e}")
@@ -112,6 +112,9 @@ def fetch_with_selenium(url, retry=True):
                 driver.save_screenshot("output/hostadvice_error.png")
             except Exception:
                 pass
+        if retry and PROXY and not proxy:
+            print("[INFO] Retrying Selenium with proxy after error")
+            return fetch_with_selenium(url, proxy=PROXY, retry=False)
         raise
     finally:
         try:
@@ -157,7 +160,21 @@ def get_hostadvice_companies(max_pages=100, log_func=None):
             print(msg)
             if log_func:
                 log_func(msg)
-            html = fetch_with_selenium(url)
+            try:
+                html = fetch_with_selenium(url)
+            except Exception as e:
+                err = f"[HostAdvice] Selenium failed: {e}"
+                print(err)
+                if log_func:
+                    log_func(err)
+                if PROXY:
+                    msg = f"[HostAdvice] Retrying with Selenium + proxy for {url}"
+                    print(msg)
+                    if log_func:
+                        log_func(msg)
+                    html = fetch_with_selenium(url, proxy=PROXY, retry=False)
+                else:
+                    break
             soup = BeautifulSoup(html, "html.parser")
         elif res.status_code != 200:
             msg = f"[HostAdvice] Failed to fetch page {page} (status {res.status_code})"

@@ -13,6 +13,7 @@ RUN mkdir -p output
 
 # Optionally set your SerpAPI key for Bing/Google search
 ENV SERPAPI_KEY=
+ENV SHOW_BROWSER=0
 
 # --- Install Google Chrome and ChromeDriver for Selenium ---
 RUN apt-get update \
