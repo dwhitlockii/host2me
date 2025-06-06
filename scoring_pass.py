@@ -5,6 +5,7 @@ import os
 
 RAW_PATH = 'output/unfiltered_hosts.csv'
 SCORED_PATH = 'output/scored_hosts.csv'
+DEBUG_PATH = 'output/company_score_debug.csv'
 
 PRIMARY_KEYWORDS = [
     'web hosting', 'dedicated server', 'cloud hosting', 'vps hosting', 'shared hosting', 'hosting provider'
@@ -147,6 +148,7 @@ def main():
         return
     df = pd.read_csv(RAW_PATH)
     results = []
+    debug_rows = []
     for _, row in df.iterrows():
         score, confidence, status, reason = score_row(row)
         results.append({
@@ -156,10 +158,29 @@ def main():
             'status': status,
             'reason': reason
         })
+        decision_label = {
+            'Accepted': '✅ ADDED',
+            'Rescued': '⚠️ BORDERLINE',
+            'Review': '🤔 REVIEW',
+            'Rejected': '❌ SKIPPED'
+        }.get(status, status)
+        print(f"[INFO] Scored {row.get('base_domain') or row.get('url')} — Score: {score} {decision_label}")
+        if reason:
+            print(f"[DEBUG] Reasons: {reason}")
+        debug_rows.append({
+            'name': row.get('base_domain'),
+            'url': row.get('url'),
+            'score': score,
+            'decision': status,
+            'reason': reason
+        })
     out_df = pd.DataFrame(results)
     os.makedirs(os.path.dirname(SCORED_PATH), exist_ok=True)
     out_df.to_csv(SCORED_PATH, index=False)
+    debug_df = pd.DataFrame(debug_rows)
+    debug_df.to_csv(DEBUG_PATH, index=False)
     print(f"[SCORE] Scoring complete. {len(out_df)} rows written to {SCORED_PATH}")
+    print(f"[SCORE] Debug scores written to {DEBUG_PATH}")
 
 if __name__ == '__main__':
     main() 

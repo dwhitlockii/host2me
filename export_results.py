@@ -36,6 +36,9 @@ def main():
     review = df[df['status'] == 'Review']
     rejected = df[df['status'] == 'Rejected']
 
+    if accepted.empty:
+        print("[WARN] No accepted companies found in scored data. Check scoring thresholds or filters.")
+
     os.makedirs('output', exist_ok=True)
     accepted.to_excel(FINAL_XLSX, index=False)
     accepted.to_excel(HOST2ME_XLSX, index=False)
