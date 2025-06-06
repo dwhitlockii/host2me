@@ -629,13 +629,21 @@ def stream_hosting_scraper(mode="directory", max_whtop_pages=None):
     if mode == "hostadvice":
         print("[LOG] Using HostAdvice directory mode.")
         yield "[LOG] Using HostAdvice directory mode."
-        companies = get_hostadvice_companies(log_func=None)
+        _logs = []
+        try:
+            companies = get_hostadvice_companies(log_func=lambda m: _logs.append(m))
+        except Exception as e:
+            err = f"[ERROR] HostAdvice scrape failed: {e}"
+            print(err)
+            yield err
+            return
+        for msg in _logs:
+            yield msg
         for i, company in enumerate(companies, 1):
             log_line = f"[✔] Added: {company['name']} ({company['url']})"
             print(log_line)
             yield log_line
             yield f"[PROGRESS] Processed {i}/{len(companies)}: {company['url']} (status: Added)"
-        # Write to CSV (already done in get_hostadvice_companies)
         print(f"[✅] HostAdvice scrape complete — saved {len(companies)} companies to CSV")
         yield f"[✅] HostAdvice scrape complete — saved {len(companies)} companies to CSV"
         return

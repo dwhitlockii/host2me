@@ -37,7 +37,7 @@ def scrape_stream():
                 log_lines.append(line)
                 yield f"data: {line}\n\n"
         except Exception as e:
-            err = f"[ERROR] Scraper crashed: {e}"
+            err = f"[LOG] Scraper failed: {e}"
             log_lines.append(err)
             yield f"data: {err}\n\n"
         finally:
