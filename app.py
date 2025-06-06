@@ -32,12 +32,17 @@ def scrape_stream():
     source = session.get('scrape_source', 'directory')
     def generate():
         log_lines = []
-        for line in stream_hosting_scraper(mode=source):
-            log_lines.append(line)
-            yield f"data: {line}\n\n"
-        # Save log to file
-        with open(LOG_FILE, "w", encoding="utf-8") as f:
-            f.write("\n".join(log_lines))
+        try:
+            for line in stream_hosting_scraper(mode=source):
+                log_lines.append(line)
+                yield f"data: {line}\n\n"
+        except Exception as e:
+            err = f"[ERROR] Scraper crashed: {e}"
+            log_lines.append(err)
+            yield f"data: {err}\n\n"
+        finally:
+            with open(LOG_FILE, "w", encoding="utf-8") as f:
+                f.write("\n".join(log_lines))
     return Response(generate(), mimetype="text/event-stream")
 
 @app.route("/download")

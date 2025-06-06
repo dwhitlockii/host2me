@@ -41,3 +41,5 @@
 - Fixed Flask 'Working outside of request context' error in /scrape-stream by moving session access outside the generator. Now reads session before generator starts, ensuring robust streaming and UI integration.
 - Dockerfile now installs Google Chrome and ChromeDriver for Selenium headless support, enabling HostAdvice scraping in Docker containers.
 - Added undetected-chromedriver for HostAdvice anti-bot evasion, updated fetch_with_selenium to use it and set more human-like options.
+- Improved Selenium stability: headless Chrome options updated, fallback retry added, and streaming errors now handled gracefully.
+
