@@ -633,16 +633,12 @@ def search_hosting_companies(log_func=None):
 def stream_hosting_scraper(mode="directory", max_whtop_pages=None):
     print("[LOG] Starting scrape...")
     yield "[LOG] Starting scrape..."
-    results = []
-    def log_func(msg):
-        print(msg)
-        yield msg
     t0 = time.time()
     urls = []
     if mode == "hostadvice":
         print("[LOG] Using HostAdvice directory mode.")
         yield "[LOG] Using HostAdvice directory mode."
-        _logs = []
+        _logs: list[str] = []
         try:
             companies = get_hostadvice_companies(log_func=lambda m: _logs.append(m))
         except Exception as e:
@@ -692,26 +688,19 @@ def stream_hosting_scraper(mode="directory", max_whtop_pages=None):
         return
     if mode == "directory":
         # WHTop directory mining
-        def yield_log(msg):
-            print(msg)
-            yield msg
-        # Use a generator to yield log lines from get_whtop_us_companies
-        whtop_gen = get_whtop_us_companies(max_pages=max_whtop_pages, log_func=lambda m: (yield m))
-        whtop_companies = []
-        for item in whtop_gen:
-            if isinstance(item, dict):
-                whtop_companies.append(item)
-            else:
-                yield item
+        _logs: list[str] = []
+        whtop_companies = get_whtop_us_companies(max_pages=max_whtop_pages, log_func=lambda m: _logs.append(m))
+        for m in _logs:
+            yield m
         urls = [c["url"] for c in whtop_companies if c["url"]]
         print(f"[PROFILE] WHTop mining phase found {len(urls)} candidate homepages")
         yield f"[PROFILE] WHTop mining phase found {len(urls)} candidate homepages"
     else:
         # Legacy: search engine scraping
-        def yield_log(msg):
-            print(msg)
-            yield msg
-        urls = search_hosting_companies(log_func=yield_log)
+        _logs: list[str] = []
+        urls = search_hosting_companies(log_func=lambda m: _logs.append(m))
+        for m in _logs:
+            yield m
         print(f"[PROFILE] Search phase found {len(urls)} candidate URLs")
         yield f"[PROFILE] Search phase found {len(urls)} candidate URLs"
     search_time = time.time() - t0
@@ -751,6 +740,8 @@ def stream_hosting_scraper(mode="directory", max_whtop_pages=None):
             log_queue.put(f"[PROGRESS] Processed {rank}/{total}: {url} (status: Error)")
     url_rank_tuples = [(url, i+1) for i, url in enumerate(urls[:100])]
     total = len(url_rank_tuples)
+    print(f"[LOG] Total URLs to check: {total}")
+    yield f"[LOG] Total URLs to check: {total}"
     t2 = time.time()
     with concurrent.futures.ThreadPoolExecutor(max_workers=extraction_pool_size) as executor:
         futures = [executor.submit(process_url, t) for t in url_rank_tuples]

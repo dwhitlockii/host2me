@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 import csv
 import os
 import time
+from utils.verification import write_log
 # Add selenium imports
 try:
     import undetected_chromedriver as uc
@@ -17,6 +18,7 @@ from selenium.webdriver.support import expected_conditions as EC
 
 BASE_URL = "https://hostadvice.com/hosting-services/"
 OUTPUT_CSV = "output/hostadvice_us_companies.csv"
+DEBUG_DIR = "output/debug"
 
 FIELDS = ["name", "url", "rating", "price", "location"]
 
@@ -25,6 +27,13 @@ PROXY = os.environ.get('SCRAPER_PROXY')
 DEBUG_MODE = os.environ.get('DEBUG_HOSTADVICE') == '1'
 # Toggle to see the browser when running locally
 SHOW_BROWSER = os.environ.get('SHOW_BROWSER') == '1'
+
+
+def save_debug_html(page: int, html: str) -> None:
+    os.makedirs(DEBUG_DIR, exist_ok=True)
+    path = os.path.join(DEBUG_DIR, f"hostadvice_page{page}.html")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(html)
 
 def parse_company_card(card):
     name = card.select_one(".company-name")
@@ -47,7 +56,7 @@ def parse_company_card(card):
         "location": location
     }
 
-def fetch_with_selenium(url, proxy=None, retry=True):
+def fetch_with_selenium(url, page: int, proxy=None, retry=True):
     user_agent = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/114.0 Safari/537.36"
@@ -68,9 +77,10 @@ def fetch_with_selenium(url, proxy=None, retry=True):
         driver = uc.Chrome(options=options) if HAVE_UC else webdriver.Chrome(options=options)
     except Exception as e:
         print(f"[ERROR] Failed to start Chrome: {e}")
+        write_log(f"[ERROR] Failed to start Chrome: {e}")
         if retry and PROXY and not proxy:
             print("[INFO] Retrying Chrome launch with proxy")
-            return fetch_with_selenium(url, proxy=PROXY, retry=False)
+            return fetch_with_selenium(url, page, proxy=PROXY, retry=False)
         return f"<html><body><h1>Selenium failed: {e}</h1></body></html>"
     try:
         driver.get(url)
@@ -99,14 +109,13 @@ def fetch_with_selenium(url, proxy=None, retry=True):
             except Exception:
                 continue
         if DEBUG_MODE:
-            driver.save_screenshot("output/hostadvice_debug.png")
+            driver.save_screenshot(os.path.join(DEBUG_DIR, "hostadvice_debug.png"))
         html = driver.page_source
-        debug_path = "output/hostadvice_debug.html"
-        with open(debug_path, "w", encoding="utf-8") as f:
-            f.write(html)
+        save_debug_html(page, html)
         return html
     except Exception as e:
         print(f"[ERROR] Selenium error: {e}")
+        write_log(f"[ERROR] Selenium error: {e}")
         if DEBUG_MODE:
             try:
                 driver.save_screenshot("output/hostadvice_error.png")
@@ -114,7 +123,7 @@ def fetch_with_selenium(url, proxy=None, retry=True):
                 pass
         if retry and PROXY and not proxy:
             print("[INFO] Retrying Selenium with proxy after error")
-            return fetch_with_selenium(url, proxy=PROXY, retry=False)
+            return fetch_with_selenium(url, page, proxy=PROXY, retry=False)
         raise
     finally:
         try:
@@ -156,40 +165,50 @@ def get_hostadvice_companies(max_pages=100, log_func=None):
         res = session.get(url, headers=headers, timeout=10)
         prev_url = url
         if res.status_code == 403:
-            msg = f"[HostAdvice] 403 Forbidden. Retrying with Selenium for {url}"
-            print(msg)
             if log_func:
-                log_func(msg)
-            try:
-                html = fetch_with_selenium(url)
-            except Exception as e:
-                err = f"[HostAdvice] Selenium failed: {e}"
-                print(err)
+                log_func(f"[HostAdvice] 403 Forbidden. Retrying with Selenium for {url}")
+            else:
+                print(f"[HostAdvice] 403 Forbidden. Retrying with Selenium for {url}")
+            html = None
+            delay = 1
+            for attempt in range(3):
                 if log_func:
-                    log_func(err)
-                if PROXY:
-                    msg = f"[HostAdvice] Retrying with Selenium + proxy for {url}"
-                    print(msg)
-                    if log_func:
-                        log_func(msg)
-                    html = fetch_with_selenium(url, proxy=PROXY, retry=False)
+                    log_func(f"[HostAdvice] Retrying page {page} with Selenium... (attempt {attempt+1})")
                 else:
+                    print(f"[HostAdvice] Retrying page {page} with Selenium... (attempt {attempt+1})")
+                try:
+                    html = fetch_with_selenium(url, page, proxy=PROXY if attempt==1 else None)
                     break
+                except Exception as e:
+                    err = f"[ERROR] Selenium attempt {attempt+1} failed: {e}"
+                    print(err)
+                    write_log(err)
+                    time.sleep(delay)
+                    delay *= 2
+            if html is None:
+                msg = f"[HostAdvice] Giving up on page {page} after Selenium retries"
+                print(msg)
+                write_log(f"[ERROR] {msg}")
+                if log_func:
+                    log_func(msg)
+                break
             soup = BeautifulSoup(html, "html.parser")
         elif res.status_code != 200:
             msg = f"[HostAdvice] Failed to fetch page {page} (status {res.status_code})"
             print(msg)
+            write_log(f"[ERROR] {msg}")
             if log_func:
                 log_func(msg)
             break
         else:
+            save_debug_html(page, res.text)
             soup = BeautifulSoup(res.text, "html.parser")
         cards = soup.select(".company-card")
         if not cards:
             cards = soup.select(".company-list-card")
         if not cards:
             cards = soup.select(".listing__card")
-        msg = f"[HostAdvice][DEBUG] Found {len(cards)} company cards on page {page}."
+        msg = f"[HostAdvice] Successfully loaded {len(cards)} cards on page {page} ✅"
         print(msg)
         if log_func:
             log_func(msg)
@@ -241,6 +260,7 @@ def get_hostadvice_companies(max_pages=100, log_func=None):
         for row in companies.values():
             writer.writerow(row)
     print(f"[HostAdvice] Scraping complete. {len(companies)} companies written to {OUTPUT_CSV}")
+    write_log(f"[HostAdvice] Scraping complete. {len(companies)} companies written to {OUTPUT_CSV}")
     return list(companies.values())
 
 if __name__ == "__main__":
