@@ -22,6 +22,7 @@ from scrapers.techradar import fetch_companies as fetch_techradar_companies
 import openpyxl
 
 from utils.db import save_company, save_html
+from utils.verification import verify_company_record
 colorama_init(autoreset=True)
 
 HEADERS = {'User-Agent': UserAgent().random}
@@ -470,7 +471,8 @@ def extract_company_info(url, rank=None, seen_domains=None, from_directory=False
             "Acceptance Status": acceptance_status,
             "Source": source or ("Directory" if from_directory else "Search")
         }
-        save_company(company)
+        if verify_company_record(company):
+            save_company(company)
         return [company], None, reasons
     except Exception as e:
         print(f"[ERR] Failed: {url} — {e}")
@@ -533,7 +535,8 @@ def extract_companies_from_directory(soup, base_url, seen_domains=None, from_dir
                 "Source": "Directory"
             }
             companies.append(company)
-            save_company(company)
+            if verify_company_record(company):
+                save_company(company)
             if seen_domains is not None:
                 seen_domains.add(domain)
             print(f"[✔] Added: {name} ({base})")
