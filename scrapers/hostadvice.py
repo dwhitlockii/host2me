@@ -5,7 +5,7 @@ from utils.browser import get_driver, wait_for
 from urllib.parse import urljoin
 
 BASE_URL = "https://hostadvice.com/hosting-services/"
-DEBUG_TEMPLATE = "output/host_debug_page{page}.html"
+DEBUG_TEMPLATE = "output/hostadvice_debug_page{page}.html"
 
 
 def save_debug_html(page: int, html: str):
@@ -33,7 +33,12 @@ def fetch_page_selenium(page: int, proxy: str | None = None):
     driver = get_driver(proxy)
     try:
         driver.get(url)
-        wait_for(driver, ".company-card,.company-list-card,.listing__card")
+        wait_for(driver, ".host-company-card,.company-card,.company-list-card,.listing__card,.host-item,.review-box")
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        try:
+            wait_for(driver, ".host-company-card,.company-card,.company-list-card,.listing__card,.host-item,.review-box")
+        except Exception:
+            pass
         html = driver.page_source
         save_debug_html(page, html)
         return html
@@ -43,7 +48,8 @@ def fetch_page_selenium(page: int, proxy: str | None = None):
 
 def parse_companies(html: str, log=None):
     soup = BeautifulSoup(html, "html.parser")
-    cards = soup.select(".company-card") or soup.select(".company-list-card") or soup.select(".listing__card")
+    selectors = ".host-company-card,.company-card,.company-list-card,.listing__card,.host-item,.review-box"
+    cards = soup.select(selectors)
     if log:
         log(f"[HostAdvice] Loaded {len(cards)} company cards")
     companies = []
@@ -98,7 +104,7 @@ def fetch_all_pages(max_pages: int = 10, proxy: str | None = None, log=None):
             save_debug_html(page, html)
         companies = parse_companies(html, log=log)
         if log:
-            log(f"[HostAdvice] Parsed {len(companies)} companies on page {page}")
+            log(f"[HostAdvice] Page {page}: found {len(companies)} hosting providers")
         new = 0
         for c in companies:
             if c['domain'] not in all_companies:
@@ -107,6 +113,9 @@ def fetch_all_pages(max_pages: int = 10, proxy: str | None = None, log=None):
         if log:
             log(f"[HostAdvice] Added {new} new companies")
         if not companies:
+            save_debug_html(page, html)
+            if log:
+                log(f"[HostAdvice][DEBUG] No company cards found on page {page}")
             break
         page += 1
     return list(all_companies.values())
