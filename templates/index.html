@@ -115,8 +115,9 @@ web hosting company comparison</textarea><br>
                         }
                     }
                     // Detect total URLs
-                    if (event.data.startsWith("[LOG] ") && event.data.includes("URLs found")) {
-                        const match = event.data.match(/(\d+) URLs found/);
+                    if (event.data.startsWith("[LOG] ") &&
+                        (event.data.includes("URLs found") || event.data.includes("Total URLs"))) {
+                        const match = event.data.match(/(\d+) (?:URLs found|Total URLs(?: to check)?)/);
                         if (match) {
                             totalUrls = parseInt(match[1]);
                             processedUrls = 0;
