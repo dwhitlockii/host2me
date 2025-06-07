@@ -16,8 +16,10 @@ from colorama import Fore, Style, init as colorama_init
 import tldextract
 import json
 from scraper.whtop_scraper import get_whtop_us_companies
-import openpyxl
 from scraper.hostadvice_scraper import get_hostadvice_companies
+from scrapers.hostingadvice_com import fetch_companies as fetch_hostingadvice_companies
+from scrapers.techradar import fetch_companies as fetch_techradar_companies
+import openpyxl
 
 colorama_init(autoreset=True)
 
@@ -646,6 +648,36 @@ def stream_hosting_scraper(mode="directory", max_whtop_pages=None):
             yield f"[PROGRESS] Processed {i}/{len(companies)}: {company['url']} (status: Added)"
         print(f"[✅] HostAdvice scrape complete — saved {len(companies)} companies to CSV")
         yield f"[✅] HostAdvice scrape complete — saved {len(companies)} companies to CSV"
+        return
+    if mode == "hostingadvice":
+        print("[LOG] Using HostingAdvice rankings mode.")
+        yield "[LOG] Using HostingAdvice rankings mode."
+        logs = []
+        companies = fetch_hostingadvice_companies(log=lambda m: logs.append(m))
+        for m in logs:
+            yield m
+        for i, company in enumerate(companies, 1):
+            line = f"[✔] Added: {company['name']} ({company['url']})"
+            print(line)
+            yield line
+            yield f"[PROGRESS] Processed {i}/{len(companies)}: {company['url']}(status: Added)"
+        print(f"[✅] HostingAdvice scrape complete — saved {len(companies)} companies")
+        yield f"[✅] HostingAdvice scrape complete — saved {len(companies)} companies"
+        return
+    if mode == "techradar":
+        print("[LOG] Using TechRadar rankings mode.")
+        yield "[LOG] Using TechRadar rankings mode."
+        logs = []
+        companies = fetch_techradar_companies(log=lambda m: logs.append(m))
+        for m in logs:
+            yield m
+        for i, company in enumerate(companies, 1):
+            line = f"[✔] Added: {company['name']} ({company['url']})"
+            print(line)
+            yield line
+            yield f"[PROGRESS] Processed {i}/{len(companies)}: {company['url']}(status: Added)"
+        print(f"[✅] TechRadar scrape complete — saved {len(companies)} companies")
+        yield f"[✅] TechRadar scrape complete — saved {len(companies)} companies"
         return
     if mode == "directory":
         # WHTop directory mining
