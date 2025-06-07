@@ -21,16 +21,16 @@ from scrapers.hostingadvice_com import fetch_companies as fetch_hostingadvice_co
 from scrapers.techradar import fetch_companies as fetch_techradar_companies
 import openpyxl
 
+from utils.db import save_company, save_html
 colorama_init(autoreset=True)
 
 HEADERS = {'User-Agent': UserAgent().random}
+SAVE_HTML = os.environ.get("SAVE_HTML", "1") == "1"
 
 FIELDS = [
     "Rank", "Company Name", "Website URL", "Careers Page URL", "Remote Work Policy",
-    "Tech Stack Relevance", "Application Status", "LinkedIn", "Twitter"
+    "Tech Stack Relevance", "Application Status", "LinkedIn", "Twitter", "HTML Path"
 ]
-
-EXCLUDE_KEYWORDS = ["reseller", "affiliate", "GoDaddy", "EIG", "subsidiary", "part of", "owned by"]
 
 # Expanded and more generic search terms
 SEARCH_TERMS = [
@@ -424,6 +424,7 @@ def extract_company_info(url, rank=None, seen_domains=None, from_directory=False
             return None, 'Duplicate domain', None
         res = requests.get(url, headers=HEADERS, timeout=5)
         content_type = res.headers.get('Content-Type', '').lower()
+        html_path = save_html(domain, res.text) if SAVE_HTML else ""
         if 'text/html' not in content_type:
             print(f"[✘] Skipped (Non-HTML content: {content_type}): {url}")
             return None, f'Non-HTML content: {content_type}', None
@@ -454,7 +455,7 @@ def extract_company_info(url, rank=None, seen_domains=None, from_directory=False
         if not careers_url:
             print(f"[!] Warning: No careers page found for {url}")
         social = get_social_links(soup)
-        return [{
+        company = {
             "Rank": rank if rank else "",
             "Company Name": name,
             "Website URL": base_url,
@@ -464,10 +465,13 @@ def extract_company_info(url, rank=None, seen_domains=None, from_directory=False
             "Application Status": "",
             "LinkedIn": social["LinkedIn"],
             "Twitter": social["Twitter"],
+            "HTML Path": html_path,
             "Scoring Breakdown": f"Score: {score} | {'; '.join(reasons)}",
             "Acceptance Status": acceptance_status,
             "Source": source or ("Directory" if from_directory else "Search")
-        }], None, reasons
+        }
+        save_company(company)
+        return [company], None, reasons
     except Exception as e:
         print(f"[ERR] Failed: {url} — {e}")
         return None, f'Error: {e}', None
@@ -492,6 +496,7 @@ def extract_companies_from_directory(soup, base_url, seen_domains=None, from_dir
                 continue
             res = requests.get(link, headers=HEADERS, timeout=5)
             content_type = res.headers.get('Content-Type', '').lower()
+            html_path = save_html(domain, res.text) if SAVE_HTML else ""
             if 'text/html' not in content_type:
                 print(f"[✘] Skipped (Non-HTML content: {content_type}): {link}")
                 continue
@@ -512,7 +517,7 @@ def extract_companies_from_directory(soup, base_url, seen_domains=None, from_dir
                     careers_url = href if "http" in href else base + href
                     break
             social = get_social_links(sub_soup)
-            companies.append({
+            company = {
                 "Rank": rank,
                 "Company Name": name,
                 "Website URL": base,
@@ -522,10 +527,13 @@ def extract_companies_from_directory(soup, base_url, seen_domains=None, from_dir
                 "Application Status": "",
                 "LinkedIn": social["LinkedIn"],
                 "Twitter": social["Twitter"],
+                "HTML Path": html_path,
                 "Scoring Breakdown": f"Score: {score} | {'; '.join(reasons)}",
                 "Acceptance Status": acceptance_status,
                 "Source": "Directory"
-            })
+            }
+            companies.append(company)
+            save_company(company)
             if seen_domains is not None:
                 seen_domains.add(domain)
             print(f"[✔] Added: {name} ({base})")

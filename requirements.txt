@@ -10,3 +10,4 @@ colorama
 tldextract
 selenium
 undetected-chromedriver
+pymongo
