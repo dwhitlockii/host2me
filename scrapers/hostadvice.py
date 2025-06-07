@@ -1,8 +1,11 @@
 import os
 import requests
 from bs4 import BeautifulSoup
-from utils.browser import get_driver, wait_for
 from urllib.parse import urljoin
+import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 BASE_URL = "https://hostadvice.com/hosting-services/"
 DEBUG_TEMPLATE = "output/hostadvice_debug_page{page}.html"
@@ -28,22 +31,61 @@ def fetch_page_requests(session: requests.Session, page: int, proxy: str | None 
     return resp
 
 
-def fetch_page_selenium(page: int, proxy: str | None = None):
+def scrape_hostadvice_page(page: int, proxy: str | None = None, log=print) -> str:
+    """Load a HostAdvice directory page using Selenium and return the HTML."""
     url = f"{BASE_URL}?page={page}"
-    driver = get_driver(proxy)
-    try:
-        driver.get(url)
-        wait_for(driver, ".host-company-card,.company-card,.company-list-card,.listing__card,.host-item,.review-box")
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    selector = (
+        ".host-company-card,.company-card,.company-list-card,.listing__card,"
+        ".provider-item,.review-card,.company-box"
+    )
+    for attempt in range(1, 4):
+        if log:
+            log(f"[HostAdvice] Fetching page {page} via Selenium... (attempt {attempt})")
+        options = uc.ChromeOptions()
+        options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_argument(
+            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0 Safari/537.36"
+        )
+        options.add_argument("--lang=en-US")
+        if proxy:
+            options.add_argument(f"--proxy-server={proxy}")
+        driver = uc.Chrome(options=options)
         try:
-            wait_for(driver, ".host-company-card,.company-card,.company-list-card,.listing__card,.host-item,.review-box")
-        except Exception:
-            pass
-        html = driver.page_source
-        save_debug_html(page, html)
-        return html
-    finally:
-        driver.quit()
+            driver.get(url)
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+            )
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            try:
+                WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                )
+            except Exception:
+                pass
+            html = driver.page_source
+            save_debug_html(page, html)
+            cards = BeautifulSoup(html, "html.parser").select(selector)
+            if cards:
+                if log:
+                    log(f"[HostAdvice] Page {page}: Found {len(cards)} companies")
+                return html
+            if log:
+                log(f"[HostAdvice] Page {page}: No company cards found — HTML saved")
+        except Exception as e:
+            if log:
+                log(f"[ERROR] Selenium attempt {attempt} failed: {e}")
+        finally:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+        # retry on failure
+    return ""
 
 
 def parse_companies(html: str, log=None):
@@ -94,7 +136,7 @@ def fetch_all_pages(max_pages: int = 10, proxy: str | None = None, log=None):
         if resp.status_code == 403:
             if log:
                 log(f"[HostAdvice] 403 on page {page}. Using Selenium")
-            html = fetch_page_selenium(page, proxy)
+            html = scrape_hostadvice_page(page, proxy, log=log)
         elif resp.status_code != 200:
             if log:
                 log(f"[HostAdvice] Failed {page} status {resp.status_code}")
