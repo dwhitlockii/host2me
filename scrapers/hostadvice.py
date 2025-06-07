@@ -2,13 +2,15 @@ import os
 import requests
 from bs4 import BeautifulSoup
 from utils.browser import get_driver, wait_for
+from urllib.parse import urljoin
 
 BASE_URL = "https://hostadvice.com/hosting-services/"
+DEBUG_TEMPLATE = "output/host_debug_page{page}.html"
 
 
 def save_debug_html(page: int, html: str):
     os.makedirs('output', exist_ok=True)
-    path = f"output/hostadvice_debug_page{page}.html"
+    path = DEBUG_TEMPLATE.format(page=page)
     with open(path, 'w', encoding='utf-8') as f:
         f.write(html)
 
@@ -39,24 +41,37 @@ def fetch_page_selenium(page: int, proxy: str | None = None):
         driver.quit()
 
 
-def parse_companies(html: str):
+def parse_companies(html: str, log=None):
     soup = BeautifulSoup(html, "html.parser")
     cards = soup.select(".company-card") or soup.select(".company-list-card") or soup.select(".listing__card")
+    if log:
+        log(f"[HostAdvice] Loaded {len(cards)} company cards")
     companies = []
+    removed = 0
     for card in cards:
         name_el = card.select_one(".company-name")
         url_el = card.select_one(".company-name a")
         if not url_el:
             continue
+        name = name_el.get_text(strip=True) if name_el else ""
+        if any(k in name.lower() for k in ["affiliate", "reseller"]):
+            removed += 1
+            continue
         url = url_el["href"]
         if url.startswith("/"):
-            url = "https://hostadvice.com" + url
+            url = urljoin(BASE_URL, url.lstrip("/"))
         domain = url.split("/")[2]
+        logo_el = card.select_one("img")
+        logo_url = logo_el["src"] if logo_el and logo_el.get("src") else ""
         companies.append({
-            "name": name_el.get_text(strip=True) if name_el else domain.split('.')[0],
+            "name": name or domain.split('.')[0],
             "domain": domain,
             "url": url,
+            "logo_url": logo_url,
+            "favicon_url": f"https://{domain}/favicon.ico",
         })
+    if log and removed:
+        log(f"[HostAdvice] Removed {removed} affiliates")
     return companies
 
 
@@ -67,6 +82,8 @@ def fetch_all_pages(max_pages: int = 10, proxy: str | None = None, log=None):
     while True:
         if max_pages and page > max_pages:
             break
+        if log:
+            log(f"[HostAdvice] Fetching page {page}")
         resp = fetch_page_requests(session, page, proxy)
         if resp.status_code == 403:
             if log:
@@ -79,7 +96,7 @@ def fetch_all_pages(max_pages: int = 10, proxy: str | None = None, log=None):
         else:
             html = resp.text
             save_debug_html(page, html)
-        companies = parse_companies(html)
+        companies = parse_companies(html, log=log)
         if log:
             log(f"[HostAdvice] Parsed {len(companies)} companies on page {page}")
         new = 0
