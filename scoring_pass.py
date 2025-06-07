@@ -26,8 +26,8 @@ NEGATIVE_KEYWORDS = [
 NAV_PATTERNS = ['/pricing', '/plans', '/hosting', '/servers', '/cloud', '/support', '/kb', '/docs', '/datacenter', '/infrastructure', '/network']
 CTA_VERBS = ['buy', 'start', 'launch', 'signup', 'quote', 'order', 'get started', 'register']
 
-ACCEPT_THRESHOLD = 30
-RESCUE_THRESHOLD = 20
+ACCEPT_THRESHOLD = 15
+POSSIBLE_THRESHOLD = 10
 
 # Helper: count strong signals
 
@@ -124,23 +124,17 @@ def score_row(row):
     if word_count < 300:
         score -= 20
         reasons.append("Short content (<300 words) (-20)")
-    # Rescue logic: If score 20–30 and at least two strong signals, flag as 'Rescued'
     strong_signals = count_strong_signals(row, snippets, links)
     if score >= ACCEPT_THRESHOLD:
         status = 'Accepted'
         confidence = 'High'
-    elif RESCUE_THRESHOLD <= score < ACCEPT_THRESHOLD and strong_signals >= 2:
-        status = 'Rescued'
-        confidence = 'Medium'
-        reasons.append(f"Rescued: {strong_signals} strong signals")
-    elif RESCUE_THRESHOLD <= score < ACCEPT_THRESHOLD:
-        status = 'Review'
-        confidence = 'Medium'
+    elif POSSIBLE_THRESHOLD <= score < ACCEPT_THRESHOLD:
+        status = 'Possible'
+        confidence = 'Medium' if strong_signals else 'Low'
     else:
         status = 'Rejected'
         confidence = 'Low'
-    reason_summary = '; '.join(reasons)
-    return score, confidence, status, reason_summary
+    return score, confidence, status, reasons
 
 def main():
     if not os.path.exists(RAW_PATH):
@@ -150,29 +144,28 @@ def main():
     results = []
     debug_rows = []
     for _, row in df.iterrows():
-        score, confidence, status, reason = score_row(row)
+        score, confidence, status, reasons = score_row(row)
         results.append({
             **row,
             'score': score,
             'confidence': confidence,
             'status': status,
-            'reason': reason
+            'reason': '; '.join(reasons)
         })
         decision_label = {
             'Accepted': '✅ ADDED',
-            'Rescued': '⚠️ BORDERLINE',
-            'Review': '🤔 REVIEW',
+            'Possible': '🤔 POSSIBLE',
             'Rejected': '❌ SKIPPED'
         }.get(status, status)
         print(f"[INFO] Scored {row.get('base_domain') or row.get('url')} — Score: {score} {decision_label}")
-        if reason:
-            print(f"[DEBUG] Reasons: {reason}")
+        for r in reasons:
+            print(f"[DEBUG] {r}")
         debug_rows.append({
             'name': row.get('base_domain'),
             'url': row.get('url'),
             'score': score,
             'decision': status,
-            'reason': reason
+            'reason': '; '.join(reasons)
         })
     out_df = pd.DataFrame(results)
     os.makedirs(os.path.dirname(SCORED_PATH), exist_ok=True)

@@ -24,6 +24,7 @@ def _connect():
             time.sleep(delay)
             delay *= 2
     _client = None
+    print("[DB] Connection Failed")
 
 def get_collection():
     global _client
