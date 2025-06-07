@@ -102,50 +102,32 @@ web hosting company comparison</textarea><br>
                 source = new EventSource("/scrape-stream");
                 source.onmessage = function(event) {
                     if (paused) return;
-                    logLines.push(event.data);
-                    filterLog();
-                    // Handle [PROGRESS] log lines
-                    if (event.data.startsWith("[PROGRESS]")) {
-                        const match = event.data.match(/Processed (\d+)[\/](\d+)/);
-                        if (match) {
-                            processedUrls = parseInt(match[1]);
-                            totalUrls = parseInt(match[2]);
-                            if (!startTime) startTime = Date.now();
-                            updateProgress();
-                        }
+                    let payload = {};
+                    try {
+                        payload = JSON.parse(event.data);
+                    } catch(e) {
+                        payload = {log: event.data};
                     }
-                    // Detect total URLs
-                    if (event.data.startsWith("[LOG] ") &&
-                        (event.data.includes("URLs found") || event.data.includes("Total URLs"))) {
-                        const match = event.data.match(/(\d+) (?:URLs found|Total URLs(?: to check)?)/);
-                        if (match) {
-                            totalUrls = parseInt(match[1]);
-                            processedUrls = 0;
-                            errorCount = 0;
-                            skippedCount = 0;
-                            addedCount = 0;
-                            startTime = null;
-                            updateProgress();
-                        }
+                    if (payload.log) {
+                        logLines.push(payload.log);
+                        filterLog();
                     }
-                    // Detect each site check (show current action, but do not increment processedUrls)
-                    if (event.data.startsWith("[SITE] Checking:")) {
+                    if (payload.progress) {
+                        processedUrls = payload.progress.processed;
+                        totalUrls = payload.progress.total;
                         if (!startTime) startTime = Date.now();
-                        updateProgress(event.data.replace('[SITE] ',''));
-                    }
-                    // Only increment result counts (not processedUrls)
-                    if (
-                        event.data.startsWith("[✔] Added") ||
-                        event.data.startsWith("[✘] Skipped") ||
-                        event.data.startsWith("[ERR] Failed")
-                    ) {
-                        if (event.data.startsWith("[✔] Added")) addedCount++;
-                        if (event.data.startsWith("[✘] Skipped")) skippedCount++;
-                        if (event.data.startsWith("[ERR] Failed")) errorCount++;
                         updateProgress();
                     }
-                    // Detect completion
-                    if (event.data.includes("[✅] Scrape complete") && !summaryShown) {
+                    if (payload.log && payload.log.startsWith("[SITE] Checking:")) {
+                        if (!startTime) startTime = Date.now();
+                        updateProgress(payload.log.replace('[SITE] ',''));
+                    }
+                    if (payload.log) {
+                        if (payload.log.startsWith("[✔] Added")) addedCount++;
+                        if (payload.log.startsWith("[✘] Skipped")) skippedCount++;
+                        if (payload.log.startsWith("[ERR] Failed")) errorCount++;
+                    }
+                    if (payload.log && payload.log.includes("[✅] Scrape complete") && !summaryShown) {
                         enableDownloads();
                         statusDiv.textContent = 'Scrape complete!';
                         progressFill.style.width = '100%';

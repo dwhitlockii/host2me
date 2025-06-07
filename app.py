@@ -1,9 +1,10 @@
-from flask import Flask, Response, render_template, send_file, request, jsonify, session, send_from_directory
+from flask import Flask, Response, render_template, send_file, request, jsonify, session, send_from_directory, stream_with_context
 from scraper.hosting_scraper import stream_hosting_scraper
 import os
 import pandas as pd
 import json
 from datetime import datetime
+import re
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev')
@@ -42,12 +43,21 @@ def scrape_stream():
                     ts_line = f"{datetime.utcnow().isoformat()} - {line}"
                     log_f.write(ts_line + "\n")
                     log_f.flush()
-                    yield f"data: {ts_line}\n\n"
+                    payload = {"log": ts_line}
+                    if line.startswith('[PROGRESS]'):
+                        m = re.search(r"Processed (\d+)/(\d+)", line)
+                        if m:
+                            payload["progress"] = {
+                                "processed": int(m.group(1)),
+                                "total": int(m.group(2))
+                            }
+                    yield f"data: {json.dumps(payload)}\n\n"
             except Exception as e:
                 err = f"{datetime.utcnow().isoformat()} - [LOG] Scraper failed: {e}"
                 log_f.write(err + "\n")
-                yield f"data: {err}\n\n"
-    return Response(generate(), mimetype="text/event-stream")
+                payload = {"log": err}
+                yield f"data: {json.dumps(payload)}\n\n"
+    return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
 @app.route("/download")
 def download():
