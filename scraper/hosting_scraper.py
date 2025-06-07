@@ -606,6 +606,12 @@ def search_hosting_companies(log_func=None):
 def stream_hosting_scraper(mode="directory", max_whtop_pages=None):
     print("[LOG] Starting scrape...")
     yield "[LOG] Starting scrape..."
+    counters = {
+        "added": 0,
+        "skipped": 0,
+        "errors": 0
+    }
+    counter_lock = threading.Lock()
     t0 = time.time()
     urls = []
     if mode == "hostadvice":
@@ -625,9 +631,14 @@ def stream_hosting_scraper(mode="directory", max_whtop_pages=None):
             log_line = f"[✔] Added: {company['name']} ({company['url']})"
             print(log_line)
             yield log_line
+            with counter_lock:
+                counters['added'] += 1
             yield f"[PROGRESS] Processed {i}/{len(companies)}: {company['url']} (status: Added)"
         print(f"[✅] HostAdvice scrape complete — saved {len(companies)} companies to CSV")
         yield f"[✅] HostAdvice scrape complete — saved {len(companies)} companies to CSV"
+        summary_line = f"[SUMMARY] Added: {counters['added']} | Errors: {counters['errors']} | Skipped: {counters['skipped']}"
+        print(summary_line)
+        yield summary_line
         return
     if mode == "hostingadvice":
         print("[LOG] Using HostingAdvice rankings mode.")
@@ -640,9 +651,14 @@ def stream_hosting_scraper(mode="directory", max_whtop_pages=None):
             line = f"[✔] Added: {company['name']} ({company['url']})"
             print(line)
             yield line
+            with counter_lock:
+                counters['added'] += 1
             yield f"[PROGRESS] Processed {i}/{len(companies)}: {company['url']}(status: Added)"
         print(f"[✅] HostingAdvice scrape complete — saved {len(companies)} companies")
         yield f"[✅] HostingAdvice scrape complete — saved {len(companies)} companies"
+        summary_line = f"[SUMMARY] Added: {counters['added']} | Errors: {counters['errors']} | Skipped: {counters['skipped']}"
+        print(summary_line)
+        yield summary_line
         return
     if mode == "techradar":
         print("[LOG] Using TechRadar rankings mode.")
@@ -655,9 +671,14 @@ def stream_hosting_scraper(mode="directory", max_whtop_pages=None):
             line = f"[✔] Added: {company['name']} ({company['url']})"
             print(line)
             yield line
+            with counter_lock:
+                counters['added'] += 1
             yield f"[PROGRESS] Processed {i}/{len(companies)}: {company['url']}(status: Added)"
         print(f"[✅] TechRadar scrape complete — saved {len(companies)} companies")
         yield f"[✅] TechRadar scrape complete — saved {len(companies)} companies"
+        summary_line = f"[SUMMARY] Added: {counters['added']} | Errors: {counters['errors']} | Skipped: {counters['skipped']}"
+        print(summary_line)
+        yield summary_line
         return
     if mode == "directory":
         # WHTop directory mining
@@ -701,16 +722,24 @@ def stream_hosting_scraper(mode="directory", max_whtop_pages=None):
                     log_line = f"[✔] Added: {company['Company Name']} ({company['Website URL']})"
                     log_queue.put(log_line)
                     processed.append(company)
+                with counter_lock:
+                    counters['added'] += 1
             else:
                 if skip_reason:
                     log_queue.put(f"[✘] Skipped ({skip_reason}): {url}")
+                    with counter_lock:
+                        counters['skipped'] += 1
                 else:
                     log_queue.put(f"[✘] Skipped: {url}")
+                    with counter_lock:
+                        counters['skipped'] += 1
             # Always log progress
             log_queue.put(f"[PROGRESS] Processed {rank}/{total}: {url} (status: {status})")
         except Exception as e:
             log_queue.put(f"[ERR] Failed: {url} — {str(e)}")
             log_queue.put(f"[PROGRESS] Processed {rank}/{total}: {url} (status: Error)")
+            with counter_lock:
+                counters['errors'] += 1
     url_rank_tuples = [(url, i+1) for i, url in enumerate(urls[:100])]
     total = len(url_rank_tuples)
     print(f"[LOG] Total URLs to check: {total}")
@@ -748,15 +777,15 @@ def stream_hosting_scraper(mode="directory", max_whtop_pages=None):
         yield f"[PROFILE] File writing phase took {file_write_time:.2f} seconds"
         print(f"[✅] Scrape complete — saved {len(processed)} companies to Excel")
         yield f"[✅] Scrape complete — saved {len(processed)} companies to Excel"
-        # At end, print color summary
-        added_count = len([c for c in processed if c.get('Acceptance Status') == 'Accepted'])
-        rescued_count = len([c for c in processed if c.get('Acceptance Status') == 'Rescued'])
-        skipped_count = len(url_rank_tuples) - len(processed)
-        print(f"{Fore.GREEN}🟢 Added: {added_count}{Style.RESET_ALL} | {Fore.YELLOW}🟡 Borderline: {rescued_count}{Style.RESET_ALL} | {Fore.RED}🔴 Skipped: {skipped_count}{Style.RESET_ALL}")
-        yield f"[SUMMARY] 🟢 Added: {added_count} | 🟡 Borderline: {rescued_count} | 🔴 Skipped: {skipped_count}"
+        summary_line = f"[SUMMARY] Added: {counters['added']} | Errors: {counters['errors']} | Skipped: {counters['skipped']}"
+        print(summary_line)
+        yield summary_line
     else:
         print("[⚠️] No valid results were scraped.")
         yield "[⚠️] No valid results were scraped."
+        summary_line = f"[SUMMARY] Added: {counters['added']} | Errors: {counters['errors']} | Skipped: {counters['skipped']}"
+        print(summary_line)
+        yield summary_line
 
 def foundational_scrape():
     urls = search_hosting_companies()
