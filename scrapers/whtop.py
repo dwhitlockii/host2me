@@ -4,11 +4,12 @@ import requests
 from bs4 import BeautifulSoup
 
 BASE_URL = "https://www.whtop.com/directory/country/us"
+DEBUG_TEMPLATE = "output/host_debug_page{page}.html"
 
 
 def save_debug_html(page: int, html: str):
     os.makedirs('output', exist_ok=True)
-    path = f"output/whtop_debug_page{page}.html"
+    path = DEBUG_TEMPLATE.format(page=page)
     with open(path, 'w', encoding='utf-8') as f:
         f.write(html)
 
@@ -49,6 +50,8 @@ def parse_companies(html: str):
             "url": f"https://{domain}",
             "plan_name": tds[0].get_text(strip=True),
             "price": tds[3].get_text(strip=True) if len(tds) > 3 else "",
+            "favicon_url": f"https://{domain}/favicon.ico",
+            "logo_url": "",
         })
     return companies
 
@@ -61,7 +64,13 @@ def fetch_all_pages(max_pages: int = 10, proxy: str | None = None, log=None):
     while True:
         if max_pages and page > max_pages:
             break
+        if log:
+            log(f"[WHTOP] Fetching page {page}")
         resp = fetch_page(session, page, proxy)
+        if resp.status_code == 403:
+            if log:
+                log(f"[WHTOP] 403 on page {page}")
+            break
         if resp.status_code != 200:
             if log:
                 log(f"[WHTOP] Failed {page} status {resp.status_code}")

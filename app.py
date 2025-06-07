@@ -3,6 +3,7 @@ from scraper.hosting_scraper import stream_hosting_scraper
 import os
 import pandas as pd
 import json
+from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev')
@@ -24,25 +25,28 @@ def start_scrape():
         json.dump(search_terms, f)
     session['search_terms'] = search_terms
     session['scrape_source'] = source
+    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+    session['log_file'] = f"output/scrape_log_{timestamp}.log"
     return '', 204
 
 @app.route("/scrape-stream")
 def scrape_stream():
     # Read session before generator starts
     source = session.get('scrape_source', 'directory')
+    log_path = session.get('log_file', LOG_FILE)
     def generate():
-        log_lines = []
-        try:
-            for line in stream_hosting_scraper(mode=source):
-                log_lines.append(line)
-                yield f"data: {line}\n\n"
-        except Exception as e:
-            err = f"[LOG] Scraper failed: {e}"
-            log_lines.append(err)
-            yield f"data: {err}\n\n"
-        finally:
-            with open(LOG_FILE, "w", encoding="utf-8") as f:
-                f.write("\n".join(log_lines))
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        with open(log_path, 'w', encoding='utf-8') as log_f:
+            try:
+                for line in stream_hosting_scraper(mode=source):
+                    ts_line = f"{datetime.utcnow().isoformat()} - {line}"
+                    log_f.write(ts_line + "\n")
+                    log_f.flush()
+                    yield f"data: {ts_line}\n\n"
+            except Exception as e:
+                err = f"{datetime.utcnow().isoformat()} - [LOG] Scraper failed: {e}"
+                log_f.write(err + "\n")
+                yield f"data: {err}\n\n"
     return Response(generate(), mimetype="text/event-stream")
 
 @app.route("/download")
@@ -59,7 +63,8 @@ def download():
         df.to_json(json_path, orient="records", force_ascii=False)
         return send_file(json_path, as_attachment=True)
     elif fmt == "log":
-        return send_file(LOG_FILE, as_attachment=True)
+        log_path = session.get('log_file', LOG_FILE)
+        return send_file(log_path, as_attachment=True)
     else:
         return send_file("output/us_hosting_companies.xlsx", as_attachment=True)
 
