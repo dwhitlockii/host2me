@@ -35,8 +35,8 @@ def scrape_hostadvice_page(page: int, proxy: str | None = None, log=print) -> st
     """Load a HostAdvice directory page using Selenium and return the HTML."""
     url = f"{BASE_URL}?page={page}"
     selector = (
-        ".host-company-card,.company-card,.company-list-card,.listing__card,"
-        ".provider-item,.review-card,.company-box"
+        ".host-company-card,.company-card,.company-list-card,.listing__card," \
+        ".provider-item,.review-card,.company-box,.provider-box,.review-box"
     )
     for attempt in range(1, 4):
         if log:
@@ -69,10 +69,15 @@ def scrape_hostadvice_page(page: int, proxy: str | None = None, log=print) -> st
                 pass
             html = driver.page_source
             save_debug_html(page, html)
-            cards = BeautifulSoup(html, "html.parser").select(selector)
+            soup = BeautifulSoup(html, "html.parser")
+            cards = soup.select(selector)
+            if not cards:
+                if log:
+                    log("[DEBUG] Selector '.company-card' failed — fallback used")
+                cards = soup.select(".provider-box,.review-box,.provider-item")
             if cards:
                 if log:
-                    log(f"[HostAdvice] Page {page}: Found {len(cards)} companies")
+                    log(f"[HostAdvice] Page {page}: Found {len(cards)} companies ✅")
                 return html
             if log:
                 log(f"[HostAdvice] Page {page}: No company cards found — HTML saved")
@@ -90,7 +95,7 @@ def scrape_hostadvice_page(page: int, proxy: str | None = None, log=print) -> st
 
 def parse_companies(html: str, log=None):
     soup = BeautifulSoup(html, "html.parser")
-    selectors = ".host-company-card,.company-card,.company-list-card,.listing__card,.host-item,.review-box"
+    selectors = ".host-company-card,.company-card,.company-list-card,.listing__card,.host-item,.review-box,.provider-box"
     cards = soup.select(selectors)
     if log:
         log(f"[HostAdvice] Loaded {len(cards)} company cards")

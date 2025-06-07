@@ -28,6 +28,13 @@ colorama_init(autoreset=True)
 HEADERS = {'User-Agent': UserAgent().random}
 SAVE_HTML = os.environ.get("SAVE_HTML", "1") == "1"
 
+# Shared counters updated during scraping
+shared_counters = {
+    "added": 0,
+    "errors": 0,
+    "skipped": 0,
+}
+
 FIELDS = [
     "Rank", "Company Name", "Website URL", "Careers Page URL", "Remote Work Policy",
     "Tech Stack Relevance", "Application Status", "LinkedIn", "Twitter", "HTML Path"
@@ -606,11 +613,10 @@ def search_hosting_companies(log_func=None):
 def stream_hosting_scraper(mode="directory", max_whtop_pages=None):
     print("[LOG] Starting scrape...")
     yield "[LOG] Starting scrape..."
-    counters = {
-        "added": 0,
-        "skipped": 0,
-        "errors": 0
-    }
+    counters = shared_counters
+    counters["added"] = 0
+    counters["skipped"] = 0
+    counters["errors"] = 0
     counter_lock = threading.Lock()
     t0 = time.time()
     urls = []

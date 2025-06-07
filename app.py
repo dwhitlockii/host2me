@@ -4,6 +4,7 @@ import os
 import pandas as pd
 import json
 from datetime import datetime
+import time
 import re
 
 app = Flask(__name__)
@@ -39,6 +40,9 @@ def scrape_stream():
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
         with open(log_path, 'w', encoding='utf-8') as log_f:
             try:
+                start = time.time()
+                processed = 0
+                total = 0
                 for line in stream_hosting_scraper(mode=source):
                     ts_line = f"{datetime.utcnow().isoformat()} - {line}"
                     log_f.write(ts_line + "\n")
@@ -47,9 +51,17 @@ def scrape_stream():
                     if line.startswith('[PROGRESS]'):
                         m = re.search(r"Processed (\d+)/(\d+)", line)
                         if m:
+                            processed = int(m.group(1))
+                            total = int(m.group(2))
+                            elapsed = time.time() - start
+                            avg = elapsed / processed if processed else 0
+                            remaining = max(total - processed, 0)
+                            eta_sec = int(avg * remaining)
+                            eta = f"{eta_sec // 60}m {eta_sec % 60}s"
                             payload["progress"] = {
-                                "processed": int(m.group(1)),
-                                "total": int(m.group(2))
+                                "processed": processed,
+                                "total": total,
+                                "eta": eta,
                             }
                     yield f"data: {json.dumps(payload)}\n\n"
             except Exception as e:
@@ -57,7 +69,10 @@ def scrape_stream():
                 log_f.write(err + "\n")
                 payload = {"log": err}
                 yield f"data: {json.dumps(payload)}\n\n"
-    return Response(stream_with_context(generate()), mimetype="text/event-stream")
+    resp = Response(stream_with_context(generate()), mimetype="text/event-stream")
+    resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["X-Accel-Buffering"] = "no"
+    return resp
 
 @app.route("/download")
 def download():
