@@ -1,4 +1,4 @@
-from scrapers import whtop, hostadvice
+from scrapers import whtop, hostadvice, hostingadvice_com, techradar
 import pandas as pd
 import os
 
@@ -10,6 +10,10 @@ def run(log=print, max_pages:int|None=None):
     log(f"[RUN] WHTop returned {len(companies)} total")
     log("[RUN] Scraping HostAdvice")
     companies += hostadvice.fetch_all_pages(max_pages=max_pages or 10, log=log)
+    log("[RUN] Scraping HostingAdvice")
+    companies += hostingadvice_com.fetch_companies(log=log)
+    log("[RUN] Scraping TechRadar")
+    companies += techradar.fetch_companies(log=log)
     log(f"[RUN] Total companies combined: {len(companies)}")
     df = pd.DataFrame(companies)
     df.drop_duplicates(subset="domain", inplace=True)
