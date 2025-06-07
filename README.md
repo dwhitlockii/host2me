@@ -37,3 +37,20 @@ The web interface also includes a **Use HostAdvice directory** checkbox.
 Enabling it switches the scraper to the HostAdvice source instead of the
 default WHTop directory mode.
 
+## Troubleshooting
+
+### Docker reports `exec ./entrypoint.sh: no such file or directory`
+
+If you build the image on Windows, Git may convert `entrypoint.sh` to
+Windows line endings (CRLF). The container expects Unix line endings and
+will fail to execute the script with the above error. Convert the file to
+LF before building or disable line ending conversion:
+
+```bash
+git config --global core.autocrlf false
+git checkout -- entrypoint.sh
+```
+
+After ensuring the script uses LF endings, rebuild the Docker image and the
+container will start correctly.
+
