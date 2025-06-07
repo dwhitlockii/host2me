@@ -28,7 +28,13 @@ web hosting company list
 cloud hosting providers directory
 web hosting company reviews
 web hosting company comparison</textarea><br>
-    <label><input type="checkbox" id="hostadviceCheckbox"> Use HostAdvice directory</label><br>
+    <label for="sourceSelect" style="font-weight:bold;">Source:</label>
+    <select id="sourceSelect" style="margin-bottom:10px;">
+        <option value="directory">WHTop Directory</option>
+        <option value="hostadvice">HostAdvice Directory</option>
+        <option value="hostingadvice">HostingAdvice Rankings</option>
+        <option value="techradar">TechRadar Rankings</option>
+    </select><br>
     <button onclick="startScrape()">Start Scrape</button>
     <button id="pauseBtn" onclick="pauseScrape()" disabled>Pause</button>
     <button id="resumeBtn" onclick="resumeScrape()" disabled>Resume</button>
@@ -87,13 +93,11 @@ web hosting company comparison</textarea><br>
             if (source) { source.close(); }
             // Get custom search terms
             const searchTerms = document.getElementById("searchTerms").value.split('\n').map(s => s.trim()).filter(Boolean);
-            // Check HostAdvice checkbox
-            const useHostAdvice = document.getElementById("hostadviceCheckbox").checked;
-            // Use fetch to POST search terms and source, then open SSE
+            const sourceOption = document.getElementById("sourceSelect").value;
             fetch('/start-scrape', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ search_terms: searchTerms, source: useHostAdvice ? 'hostadvice' : 'directory' })
+                body: JSON.stringify({ search_terms: searchTerms, source: sourceOption })
             }).then(() => {
                 source = new EventSource("/scrape-stream");
                 source.onmessage = function(event) {
