@@ -106,10 +106,7 @@ DOMAIN_BLACKLIST = [
 ]
 
 STRICT = True
-if not STRICT:
-    MIN_ACCEPT_SCORE = 20
-else:
-    MIN_ACCEPT_SCORE = 30
+MIN_ACCEPT_SCORE = 15
 
 REVIEW_QUEUE_PATH = 'output/review_queue.csv'
 
@@ -347,67 +344,43 @@ def is_hosting_company(soup, url=None, return_score=False, crawl_deeper=False, f
                     if sub_score > best_score:
                         best_score = sub_score
                         best_reasons = sub_reasons
-                        reasons.append(f"+Multi-page: {sub} score {sub_score}")
+                        reasons = sub_reasons + [f"+Multi-page: {sub} score {sub_score}"]
             except Exception as e:
                 reasons.append(f"[Multi-page error: {e}]")
     # Rescue logic: 20 <= score < MIN_ACCEPT_SCORE and (careers/jobs link or tech keyword present)
-    rescue = False
-    rescue_reasons = []
     careers_url = ""
     for a in soup.find_all("a", href=True):
         href = a["href"].lower()
         if "career" in href or "jobs" in href:
             careers_url = href
-            rescue = True
-            rescue_reasons.append("Careers/Jobs link found")
+            reasons.append("+10: careers page")
+            best_score += 10
             break
     tech_keywords = ['cpanel', 'litespeed', 'whmcs']
     tech_found = any(tk in text for tk in tech_keywords)
     if tech_found:
-        rescue = True
-        rescue_reasons.append("Tech keyword found")
-    # Final decision
+        reasons.append("+10: tech keyword")
+        best_score += 10
+
+    decision = "REJECT"
     accepted = False
-    acceptance_status = "Skipped"
-    review_flag = ''
+    acceptance_status = "Rejected"
     if best_score >= MIN_ACCEPT_SCORE and not disqualified:
+        decision = "PASS"
         accepted = True
         acceptance_status = "Accepted"
-        debug.append(f"SCORE: {best_score} ✅ ADDED")
-    elif 20 <= best_score < MIN_ACCEPT_SCORE:
-        if (STRICT and rescue) or (not STRICT and (rescue or tech_found or careers_url)):
-            accepted = True
-            acceptance_status = "Rescued"
-            debug.append(f"SCORE: {best_score} ⚠️ RESCUED ({', '.join(rescue_reasons)})")
-        else:
-            debug.append(f"SCORE: {best_score} 🧐 CANDIDATE")
-            print(f"[🧐 CANDIDATE] {url} — borderline, score: {best_score}")
-            print("Reasons:", best_reasons)
-            append_review_queue(url, best_score, best_reasons, review_flag='borderline', title=title, meta_desc=meta_desc)
-            borderline_rows.append({
-                'URL': url,
-                'Score': best_score,
-                'Reasons': '; '.join(best_reasons),
-                'Title': title,
-                'Meta Description': meta_desc,
-                'Source': source or ("Directory" if from_directory else "Search")
-            })
-    elif -5 <= best_score < 20 and not disqualified:
+    elif 10 <= best_score < MIN_ACCEPT_SCORE and not disqualified:
+        decision = "POSSIBLE"
         review_flag = 'possible_host'
-        debug.append(f"SCORE: {best_score} 🤔 POSSIBLE HOST")
-        append_review_queue(url, best_score, best_reasons, review_flag=review_flag, title=title, meta_desc=meta_desc)
-        borderline_rows.append({
-            'URL': url,
-            'Score': best_score,
-            'Reasons': '; '.join(best_reasons),
-            'Title': title,
-            'Meta Description': meta_desc,
-            'Source': source or ("Directory" if from_directory else "Search")
-        })
+        append_review_queue(url, best_score, reasons, review_flag=review_flag, title=title, meta_desc=meta_desc)
+        borderline_rows.append({'URL': url, 'Score': best_score, 'Reasons': '; '.join(reasons), 'Title': title, 'Meta Description': meta_desc, 'Source': source or ("Directory" if from_directory else "Search")})
     else:
-        debug.append(f"SCORE: {best_score} ❌ REJECTED")
-        append_review_queue(url, best_score, best_reasons, review_flag='', title=title, meta_desc=meta_desc)
-    print(f"[DEBUG] {url or ''}\n" + '\n'.join(debug))
+        append_review_queue(url, best_score, reasons, review_flag='', title=title, meta_desc=meta_desc)
+
+    score_log = [f"[SCORE] {urlparse(url).netloc}"] + reasons + [f"Final Score: {best_score} → {decision}"]
+    debug.extend(score_log)
+    print('\n'.join(score_log))
+    print()
     if return_score:
         return accepted, debug, best_score, True, acceptance_status
     return accepted, None, None, True, acceptance_status

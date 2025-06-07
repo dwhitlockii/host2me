@@ -18,7 +18,7 @@ from selenium.webdriver.support import expected_conditions as EC
 
 BASE_URL = "https://hostadvice.com/hosting-services/"
 OUTPUT_CSV = "output/hostadvice_us_companies.csv"
-DEBUG_DIR = "output/debug"
+DEBUG_DIR = "output"
 
 FIELDS = ["name", "url", "rating", "price", "location"]
 
@@ -31,7 +31,7 @@ SHOW_BROWSER = os.environ.get('SHOW_BROWSER') == '1'
 
 def save_debug_html(page: int, html: str) -> None:
     os.makedirs(DEBUG_DIR, exist_ok=True)
-    path = os.path.join(DEBUG_DIR, f"hostadvice_page{page}.html")
+    path = os.path.join(DEBUG_DIR, f"hostadvice_debug_page{page}.html")
     with open(path, "w", encoding="utf-8") as f:
         f.write(html)
 
@@ -83,11 +83,13 @@ def fetch_with_selenium(url, page: int, proxy=None, retry=True):
             return fetch_with_selenium(url, page, proxy=PROXY, retry=False)
         return f"<html><body><h1>Selenium failed: {e}</h1></body></html>"
     try:
+        print(f"[HostAdvice] (selenium) Loading {url}")
+        write_log(f"[HostAdvice] (selenium) Loading {url}")
         driver.get(url)
         time.sleep(2)
         # Wait for company card to appear (try multiple selectors)
         found = False
-        for class_name in ["company-card", "company-list-card", "listing__card"]:
+        for class_name in ["host-company-card", "company-card", "company-list-card", "listing__card"]:
             try:
                 WebDriverWait(driver, 15).until(
                     EC.presence_of_element_located((By.CLASS_NAME, class_name))
@@ -100,7 +102,7 @@ def fetch_with_selenium(url, page: int, proxy=None, retry=True):
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(3)
         # Wait again for more cards
-        for class_name in ["company-card", "company-list-card", "listing__card"]:
+        for class_name in ["host-company-card", "company-card", "company-list-card", "listing__card"]:
             try:
                 WebDriverWait(driver, 7).until(
                     EC.presence_of_element_located((By.CLASS_NAME, class_name))
@@ -162,7 +164,24 @@ def get_hostadvice_companies(max_pages=100, log_func=None):
         print(msg)
         if log_func:
             log_func(msg)
-        res = session.get(url, headers=headers, timeout=10)
+        attempt = 0
+        delay = 1
+        while True:
+            try:
+                res = session.get(url, headers=headers, timeout=10)
+                break
+            except Exception as e:
+                attempt += 1
+                if attempt > 3:
+                    err = f"[HostAdvice] Failed to request page {page}: {e}"
+                    print(err)
+                    write_log(err)
+                    if log_func:
+                        log_func(err)
+                    return list(companies.values())
+                time.sleep(delay)
+                delay *= 2
+                continue
         prev_url = url
         if res.status_code == 403:
             if log_func:
@@ -203,12 +222,14 @@ def get_hostadvice_companies(max_pages=100, log_func=None):
         else:
             save_debug_html(page, res.text)
             soup = BeautifulSoup(res.text, "html.parser")
-        cards = soup.select(".company-card")
+        cards = soup.select(".host-company-card")
+        if not cards:
+            cards = soup.select(".company-card")
         if not cards:
             cards = soup.select(".company-list-card")
         if not cards:
             cards = soup.select(".listing__card")
-        msg = f"[HostAdvice] Successfully loaded {len(cards)} cards on page {page} ✅"
+        msg = f"[HostAdvice] Page {page}: loaded {len(cards)} company cards"
         print(msg)
         if log_func:
             log_func(msg)
